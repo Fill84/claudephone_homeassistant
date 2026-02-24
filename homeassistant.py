@@ -243,4 +243,3 @@ class HomeAssistantPlugin(PluginBase):
         }}
         </script>
         """
-0d
