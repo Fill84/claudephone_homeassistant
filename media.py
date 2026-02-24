@@ -1,7 +1,7 @@
 """Media control via Home Assistant media_player entities."""
 
 import logging
-from typing import Optional
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,22 @@ class MediaHandler:
                 "Ik kan afspelen, stoppen, pauzeren, volume wijzigen of nummers overslaan.",
                 language,
             )
+
+    def get_status(self) -> Dict[str, Any]:
+        """Return current media player status for the widget."""
+        entities = self.ha._get_entities()
+        for e in entities:
+            if e["entity_id"].startswith("media_player."):
+                attrs = e.get("attributes", {})
+                return {
+                    "entity_id": e["entity_id"],
+                    "state": e.get("state", "unknown"),
+                    "friendly_name": attrs.get("friendly_name", e["entity_id"]),
+                    "media_title": attrs.get("media_title", ""),
+                    "media_artist": attrs.get("media_artist", ""),
+                    "volume_level": attrs.get("volume_level"),
+                }
+        return {}
 
     def _get_player(self) -> Optional[str]:
         """Find the first available media player entity."""
