@@ -1,5 +1,6 @@
 """Home Assistant REST API handler for smart home device control."""
 
+import json
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -88,7 +89,6 @@ class HomeAssistantHandler:
                     language,
                 )
 
-            import json
             # Try to parse LLM response as JSON
             result_text = result.strip()
             # Strip markdown code block if present
@@ -114,7 +114,7 @@ class HomeAssistantHandler:
                 "Ik begrijp dat commando niet.",
                 language,
             )
-        except (json.JSONDecodeError, Exception) as e:
+        except Exception as e:
             logger.warning("LLM smart home handling failed: %s", e)
             return self._handle_keywords(text.lower(), language)
 
@@ -178,6 +178,14 @@ class HomeAssistantHandler:
                 best = e
 
         return best if best_score > 0 else None
+
+    def has_media_players(self) -> bool:
+        """Check if Home Assistant has any media_player entities."""
+        entities = self._get_entities()
+        return any(
+            e.get("entity_id", "").startswith("media_player.")
+            for e in entities
+        )
 
     def _get_entities(self) -> List[Dict[str, Any]]:
         """Get all entities from Home Assistant."""
