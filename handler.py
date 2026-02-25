@@ -187,6 +187,20 @@ class HomeAssistantHandler:
             for e in entities
         )
 
+    def get_services(self) -> List[Dict[str, Any]]:
+        """Get available service domains from Home Assistant."""
+        try:
+            r = requests.get(
+                f"{self.base_url}/api/services",
+                headers=self._headers,
+                timeout=5,
+            )
+            if r.status_code == 200:
+                return r.json()
+        except Exception as e:
+            logger.warning("Failed to get HA services: %s", e)
+        return []
+
     def _get_entities(self) -> List[Dict[str, Any]]:
         """Get all entities from Home Assistant."""
         try:

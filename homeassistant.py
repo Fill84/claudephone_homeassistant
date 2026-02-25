@@ -30,6 +30,12 @@ class HomeAssistantPlugin(PluginBase):
                 "kleur", "blauw", "rood", "groen", "oranje", "geel",
                 "paars", "roze", "wit", "warm", "koel",
                 "gordijn", "gordijnen", "rolluik",
+                # Music / media
+                "muziek", "speel", "afspelen", "pauzeer", "pauze",
+                "nummer", "liedje", "wat speelt", "wat draait",
+                "harder", "zachter", "stiller", "volume",
+                "volgend", "volgende", "vorig", "vorige",
+                "mediaspeler",
             ],
             "en": [
                 "light", "lights", "lamp", "lamps", "lighting",
@@ -39,6 +45,11 @@ class HomeAssistantPlugin(PluginBase):
                 "color", "colour", "blue", "red", "green", "orange", "yellow",
                 "purple", "pink", "white", "warm", "cool",
                 "curtain", "curtains", "blind", "blinds",
+                # Music / media
+                "music", "play", "pause", "stop music",
+                "song", "track", "what's playing", "now playing",
+                "louder", "quieter", "softer", "volume",
+                "next track", "previous track", "media player",
             ],
         }
 
@@ -86,12 +97,14 @@ class HomeAssistantPlugin(PluginBase):
 
     def __init__(self):
         self._handler = None
+        self._ma_handler = None
 
     def setup(self, context) -> None:
         super().setup(context)
 
     def on_enable(self) -> None:
         from .handler import HomeAssistantHandler
+        from .music_assistant import MusicAssistantHandler
 
         base_url = self.context.get_env("HA_BASE_URL")
         access_token = self.context.get_env("HA_ACCESS_TOKEN")
@@ -101,9 +114,11 @@ class HomeAssistantPlugin(PluginBase):
                 access_token=access_token,
                 ollama=self.context.ollama,
             )
+            self._ma_handler = MusicAssistantHandler(self._handler)
 
     def on_disable(self) -> None:
         self._handler = None
+        self._ma_handler = None
 
     def test_connection(self) -> bool:
         base_url = self.context.get_env("HA_BASE_URL")
@@ -124,13 +139,39 @@ class HomeAssistantPlugin(PluginBase):
                 "Home Assistant is niet beschikbaar.",
                 language,
             )
+
+        # Route music/media queries to Music Assistant when available
+        if self._ma_handler and self._ma_handler.is_available():
+            if self._is_music_query(text, language):
+                return self._ma_handler.handle(text, language)
+
         return self._handler.handle(text, language)
+
+    def _is_music_query(self, text: str, language: str) -> bool:
+        """Detect if the text is about music/media playback."""
+        text_lower = text.lower()
+        markers = [
+            # Dutch
+            "wat speelt", "wat draait", "welk nummer", "welk liedje",
+            "welke muziek", "pauzeer", "pauze", "hervat",
+            "volgend nummer", "vorig nummer", "volgende", "vorige",
+            "harder", "zachter", "stiller", "speel muziek",
+            "stop muziek", "nu speelt", "nu draait",
+            # English
+            "what's playing", "what is playing", "now playing",
+            "current song", "current track", "pause",
+            "next track", "next song", "previous track", "previous song",
+            "volume up", "volume down", "louder", "quieter", "softer",
+            "stop music", "stop playing", "play music",
+            "resume", "what song", "what track",
+        ]
+        return any(m in text_lower for m in markers)
 
     # --- Dashboard ---
 
     @property
     def dashboard_widgets(self) -> List[DashboardWidget]:
-        return [
+        widgets = [
             DashboardWidget(
                 id="ha-status",
                 title="Home Assistant",
@@ -139,10 +180,23 @@ class HomeAssistantPlugin(PluginBase):
                 order=10,
             ),
         ]
+        if self._ma_handler and self._ma_handler.is_available():
+            widgets.append(
+                DashboardWidget(
+                    id="ha-media-player",
+                    title="Now Playing",
+                    icon="🎵",
+                    size="medium",
+                    order=11,
+                ),
+            )
+        return widgets
 
     def render_widget(self, widget_id: str) -> str:
         if widget_id == "ha-status":
             return self._render_status_widget()
+        if widget_id == "ha-media-player":
+            return self._render_media_widget()
         return ""
 
     def _render_status_widget(self) -> str:
@@ -241,5 +295,148 @@ class HomeAssistantPlugin(PluginBase):
                 el.style.color = '#ef4444';
             }}
         }}
+        </script>
+        """
+
+    # --- Music Assistant API & Widget ---
+
+    def handle_api_action(self, action: str, data: dict) -> dict:
+        if action == "media/now-playing":
+            if self._ma_handler:
+                return self._ma_handler.get_now_playing_info()
+            return {"available": False}
+
+        if action == "media/command":
+            if not self._ma_handler:
+                return {"error": "Music Assistant not available"}
+            cmd = data.get("command", "")
+            result = False
+            if cmd == "play":
+                result = self._ma_handler.play()
+            elif cmd == "pause":
+                result = self._ma_handler.pause()
+            elif cmd == "stop":
+                result = self._ma_handler.stop()
+            elif cmd == "next":
+                result = self._ma_handler.next_track()
+            elif cmd == "previous":
+                result = self._ma_handler.previous_track()
+            elif cmd == "volume":
+                result = self._ma_handler.set_volume(float(data.get("value", 0.5)))
+            elif cmd == "volume_up":
+                result = self._ma_handler.volume_up()
+            elif cmd == "volume_down":
+                result = self._ma_handler.volume_down()
+            return {"success": result}
+
+        return {"error": "Unknown action"}
+
+    def _render_media_widget(self) -> str:
+        return """
+        <div id="ma-widget-content" style="color:#94a3b8;text-align:center;padding:8px;min-height:100px">
+            Loading...
+        </div>
+        <script>
+        (function() {
+            var ACTION = '/api/plugins/homeassistant/action';
+
+            function fmt(sec) {
+                if (sec == null) return '--:--';
+                var m = Math.floor(sec / 60);
+                var s = Math.floor(sec % 60);
+                return m + ':' + (s < 10 ? '0' : '') + s;
+            }
+
+            async function refresh() {
+                try {
+                    var r = await fetch(ACTION + '/media/now-playing', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+                    var d = await r.json();
+                    var el = document.getElementById('ma-widget-content');
+                    if (!el) return;
+
+                    if (!d.available) {
+                        el.innerHTML = '<span style="color:#64748b;font-size:0.85rem">Nothing playing</span>';
+                        return;
+                    }
+
+                    var art = '';
+                    if (d.artwork_url) {
+                        art = '<img src="' + d.artwork_url + '" '
+                            + 'style="width:64px;height:64px;border-radius:6px;object-fit:cover;flex-shrink:0" '
+                            + 'onerror="this.style.display=\\'none\\'">';
+                    }
+
+                    var info = '<div style="flex:1;min-width:0;text-align:left">'
+                        + '<div style="font-weight:600;font-size:0.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e2e8f0">'
+                        + (d.title || 'Unknown') + '</div>'
+                        + '<div style="color:#94a3b8;font-size:0.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+                        + (d.artist || '') + '</div>'
+                        + '<div style="color:#64748b;font-size:0.75rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+                        + (d.album || '') + '</div>'
+                        + '</div>';
+
+                    var progress = '';
+                    if (d.duration) {
+                        var pct = d.position ? Math.min(100, (d.position / d.duration) * 100) : 0;
+                        progress = '<div style="margin-top:8px">'
+                            + '<div style="display:flex;justify-content:space-between;font-size:0.7rem;color:#64748b">'
+                            + '<span>' + fmt(d.position) + '</span>'
+                            + '<span>' + fmt(d.duration) + '</span></div>'
+                            + '<div style="background:#1e293b;border-radius:2px;height:3px;margin-top:2px">'
+                            + '<div style="background:#38bdf8;height:100%;border-radius:2px;width:'
+                            + pct + '%;transition:width 1s linear"></div></div></div>';
+                    }
+
+                    var playBtn = d.state === 'playing'
+                        ? '<button onclick="maCmd(\\'pause\\')" style="background:none;border:none;color:#e2e8f0;cursor:pointer;padding:4px;font-size:1.3rem" title="Pause">&#9208;</button>'
+                        : '<button onclick="maCmd(\\'play\\')" style="background:none;border:none;color:#e2e8f0;cursor:pointer;padding:4px;font-size:1.3rem" title="Play">&#9654;&#65039;</button>';
+
+                    var controls = '<div style="display:flex;justify-content:center;align-items:center;gap:16px;margin-top:8px">'
+                        + '<button onclick="maCmd(\\'previous\\')" style="background:none;border:none;color:#e2e8f0;cursor:pointer;padding:4px;font-size:1.1rem" title="Previous">&#9198;</button>'
+                        + playBtn
+                        + '<button onclick="maCmd(\\'next\\')" style="background:none;border:none;color:#e2e8f0;cursor:pointer;padding:4px;font-size:1.1rem" title="Next">&#9197;</button>'
+                        + '</div>';
+
+                    var volPct = d.volume != null ? Math.round(d.volume * 100) : 0;
+                    var volume = '<div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:0.75rem;color:#64748b">'
+                        + '<span>&#128264;</span>'
+                        + '<input type="range" min="0" max="100" value="' + volPct
+                        + '" style="flex:1;height:3px;accent-color:#38bdf8" '
+                        + 'onchange="maVolume(this.value)">'
+                        + '<span>' + volPct + '%</span></div>';
+
+                    el.innerHTML = '<div style="display:flex;gap:12px;align-items:center">'
+                        + art + info + '</div>' + progress + controls + volume;
+
+                } catch(e) {
+                    var el = document.getElementById('ma-widget-content');
+                    if (el) el.innerHTML = '<span style="color:#ef4444;font-size:0.85rem">Error loading player</span>';
+                }
+            }
+
+            window.maCmd = async function(cmd) {
+                try {
+                    await fetch(ACTION + '/media/command', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({command: cmd}),
+                    });
+                    setTimeout(refresh, 500);
+                } catch(e) {}
+            };
+
+            window.maVolume = async function(pct) {
+                try {
+                    await fetch(ACTION + '/media/command', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({command: 'volume', value: parseInt(pct) / 100}),
+                    });
+                } catch(e) {}
+            };
+
+            refresh();
+            setInterval(refresh, 5000);
+        })();
         </script>
         """
