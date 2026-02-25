@@ -13,6 +13,7 @@ class MusicAssistantHandler:
     def __init__(self, ha_handler):
         self._ha = ha_handler
         self._ma_available: Optional[bool] = None
+        self._ma_domain: Optional[str] = None
         self._cache_ts: float = 0.0
 
     # --- Detection ---
@@ -37,8 +38,12 @@ class MusicAssistantHandler:
             domains = {s.get("domain") for s in services}
             logger.info("MA detection - service domains: %s",
                         [d for d in domains if d and ("mass" in d or "music" in d)])
-            if "music_assistant" in domains or "mass" in domains:
+            if "music_assistant" in domains:
                 self._ma_available = True
+                self._ma_domain = "music_assistant"
+            elif "mass" in domains:
+                self._ma_available = True
+                self._ma_domain = "mass"
         except Exception as e:
             logger.warning("Music Assistant service detection failed: %s", e)
 
@@ -65,6 +70,11 @@ class MusicAssistantHandler:
         self._cache_ts = now
         logger.info("Music Assistant available: %s", self._ma_available)
         return self._ma_available
+
+    @property
+    def ma_domain(self) -> str:
+        """Return the detected Music Assistant service domain."""
+        return self._ma_domain or "mass"
 
     # --- Player State ---
 
@@ -178,6 +188,31 @@ class MusicAssistantHandler:
             return False
         return self._ha._call_service("media_player", "volume_down", entity_id)
 
+    # --- Search & Play ---
+
+    def play_media(self, query: str, media_type: str = None,
+                   entity_id: str = None) -> bool:
+        """Search for and play media using Music Assistant.
+
+        Args:
+            query: Search query (artist name, song title, etc.)
+            media_type: Optional filter - artist, album, track, playlist, radio.
+            entity_id: Target media player. Uses active/first player if omitted.
+        """
+        entity_id = entity_id or self._active_entity_id()
+        if not entity_id:
+            return False
+
+        data = {"media_id": query}
+        if media_type:
+            data["media_type"] = media_type
+
+        domain = self.ma_domain
+        logger.info("MA play_media: domain=%s, query='%s', type=%s, player=%s",
+                     domain, query, media_type, entity_id)
+
+        return self._ha._call_service(domain, "play_media", entity_id, data)
+
     # --- Voice / LLM Handle ---
 
     def handle(self, text: str, language: str = "en") -> str:
@@ -213,8 +248,26 @@ class MusicAssistantHandler:
             ok = self.volume_down()
             return self._msg("Volume down.", "Volume omlaag.", language) if ok else self._no_player(language)
 
-        # Play / resume (last — "play" is generic)
-        if any(k in text_lower for k in ["play", "speel", "hervat", "resume", "afspelen"]):
+        # Search and play specific music, or resume playback
+        if any(k in text_lower for k in [
+            "play", "speel", "draai", "zet op", "put on",
+            "afspelen", "hervat", "resume", "start",
+        ]):
+            query = self._extract_search_query(text, language)
+            if query:
+                ok = self.play_media(query)
+                if ok:
+                    return self._msg(
+                        f"Searching and playing: {query}.",
+                        f"Zoeken en afspelen: {query}.",
+                        language,
+                    )
+                return self._msg(
+                    f"Could not play: {query}.",
+                    f"Kon niet afspelen: {query}.",
+                    language,
+                )
+            # No search query — just resume playback
             ok = self.play()
             return self._msg("Playing.", "Afspelen.", language) if ok else self._no_player(language)
 
@@ -222,6 +275,46 @@ class MusicAssistantHandler:
         return self._format_now_playing(language)
 
     # --- Private helpers ---
+
+    def _extract_search_query(self, text: str, language: str) -> Optional[str]:
+        """Extract a music search query from natural language.
+
+        Strips known command prefixes and returns the remainder.
+        Examples (NL): "speel iets van Justin Bieber" -> "Justin Bieber"
+        Examples (EN): "play something by Ed Sheeran" -> "Ed Sheeran"
+        """
+        text_stripped = text.strip()
+        text_lower = text_stripped.lower()
+
+        # Prefixes to strip (longer/more specific first)
+        prefixes_nl = [
+            "speel iets van", "speel iets af van", "speel wat van",
+            "draai iets van", "draai wat van",
+            "zet muziek op van", "zet iets op van", "zet wat op van",
+            "start met afspelen van", "begin met afspelen van",
+            "speel het nummer", "speel het liedje", "speel het album",
+            "draai het nummer", "draai het liedje", "draai het album",
+            "speel muziek van", "draai muziek van",
+            "speel af", "start afspelen",
+            "speel", "draai", "zet op",
+        ]
+        prefixes_en = [
+            "play something by", "play some music by", "play music by",
+            "put on something by", "put on some",
+            "play the song", "play the track", "play the album",
+            "play some", "play",
+            "start playing", "put on",
+        ]
+
+        prefixes = prefixes_nl + prefixes_en if language == "nl" else prefixes_en + prefixes_nl
+
+        for prefix in prefixes:
+            if text_lower.startswith(prefix):
+                remainder = text_stripped[len(prefix):].strip()
+                if remainder:
+                    return remainder
+
+        return None
 
     def _active_entity_id(self) -> Optional[str]:
         player = self.get_active_player()

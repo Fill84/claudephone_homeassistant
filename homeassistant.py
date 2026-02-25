@@ -14,44 +14,48 @@ class HomeAssistantPlugin(PluginBase):
             name="homeassistant",
             display_name="Home Assistant",
             description="Control smart home devices via Home Assistant REST API",
-            version="2.0.0",
+            version="2.0.1",
             author="Phillippe Pelzer",
         )
 
     @property
     def keywords(self) -> Dict[str, List[str]]:
-        return {
-            "nl": [
-                "lamp", "lampen", "licht", "lichten", "verlichting",
-                "schakelaar", "schakel", "zet aan", "zet uit",
-                "doe aan", "doe uit", "aan doen", "uit doen",
-                "temperatuur", "thermostaat", "graden",
-                "helderheid", "dimmen", "dim",
-                "kleur", "blauw", "rood", "groen", "oranje", "geel",
-                "paars", "roze", "wit", "warm", "koel",
-                "gordijn", "gordijnen", "rolluik",
-                # Music / media
+        nl = [
+            "lamp", "lampen", "licht", "lichten", "verlichting",
+            "schakelaar", "schakel", "zet aan", "zet uit",
+            "doe aan", "doe uit", "aan doen", "uit doen",
+            "temperatuur", "thermostaat", "graden",
+            "helderheid", "dimmen", "dim",
+            "kleur", "blauw", "rood", "groen", "oranje", "geel",
+            "paars", "roze", "wit", "warm", "koel",
+            "gordijn", "gordijnen", "rolluik",
+        ]
+        en = [
+            "light", "lights", "lamp", "lamps", "lighting",
+            "switch", "turn on", "turn off",
+            "temperature", "thermostat", "degrees",
+            "brightness", "dim", "dimmer",
+            "color", "colour", "blue", "red", "green", "orange", "yellow",
+            "purple", "pink", "white", "warm", "cool",
+            "curtain", "curtains", "blind", "blinds",
+        ]
+
+        if self._ma_handler and self._ma_handler.is_available():
+            nl += [
                 "muziek", "speel", "afspelen", "pauzeer", "pauze",
                 "nummer", "liedje", "wat speelt", "wat draait",
                 "harder", "zachter", "stiller", "volume",
                 "volgend", "volgende", "vorig", "vorige",
                 "mediaspeler",
-            ],
-            "en": [
-                "light", "lights", "lamp", "lamps", "lighting",
-                "switch", "turn on", "turn off",
-                "temperature", "thermostat", "degrees",
-                "brightness", "dim", "dimmer",
-                "color", "colour", "blue", "red", "green", "orange", "yellow",
-                "purple", "pink", "white", "warm", "cool",
-                "curtain", "curtains", "blind", "blinds",
-                # Music / media
+            ]
+            en += [
                 "music", "play", "pause", "stop music",
                 "song", "track", "what's playing", "now playing",
                 "louder", "quieter", "softer", "volume",
                 "next track", "previous track", "media player",
-            ],
-        }
+            ]
+
+        return {"nl": nl, "en": en}
 
     @property
     def category_names(self) -> Dict[str, List[str]]:
@@ -62,27 +66,28 @@ class HomeAssistantPlugin(PluginBase):
 
     @property
     def category_options(self) -> Dict[str, Dict[str, Any]]:
+        nl_options = [
+            "Lampen aan of uit zetten",
+            "Helderheid of kleur aanpassen",
+            "Thermostaat instellen",
+            "Gordijnen openen of sluiten",
+            "Schakelaar bedienen",
+        ]
+        en_options = [
+            "Turn lights on or off",
+            "Adjust brightness or color",
+            "Set the thermostat",
+            "Open or close curtains",
+            "Control a switch",
+        ]
+
+        if self._ma_handler and self._ma_handler.is_available():
+            nl_options.append("Muziek afspelen of bedienen")
+            en_options.append("Play or control music")
+
         return {
-            "nl": {
-                "name": "Smart Home",
-                "options": [
-                    "Lampen aan of uit zetten",
-                    "Helderheid of kleur aanpassen",
-                    "Thermostaat instellen",
-                    "Gordijnen openen of sluiten",
-                    "Schakelaar bedienen",
-                ],
-            },
-            "en": {
-                "name": "Smart Home",
-                "options": [
-                    "Turn lights on or off",
-                    "Adjust brightness or color",
-                    "Set the thermostat",
-                    "Open or close curtains",
-                    "Control a switch",
-                ],
-            },
+            "nl": {"name": "Smart Home", "options": nl_options},
+            "en": {"name": "Smart Home", "options": en_options},
         }
 
     @property
@@ -151,21 +156,48 @@ class HomeAssistantPlugin(PluginBase):
         """Detect if the text is about music/media playback."""
         text_lower = text.lower()
         markers = [
-            # Dutch
+            # Dutch — now-playing queries
             "wat speelt", "wat draait", "welk nummer", "welk liedje",
-            "welke muziek", "pauzeer", "pauze", "hervat",
+            "welke muziek", "nu speelt", "nu draait",
+            # Dutch — playback controls
+            "pauzeer", "pauze", "hervat",
             "volgend nummer", "vorig nummer", "volgende", "vorige",
-            "harder", "zachter", "stiller", "speel muziek",
-            "stop muziek", "nu speelt", "nu draait",
-            # English
+            "harder", "zachter", "stiller",
+            "speel muziek", "stop muziek",
+            # Dutch — search/play
+            "speel iets", "speel wat", "speel het nummer", "speel het liedje",
+            "speel het album", "draai iets", "draai wat", "draai het",
+            "zet muziek op", "zet iets op", "start met afspelen",
+            "begin met afspelen", "speel af",
+            "muziek van", "iets van",
+            # English — now-playing queries
             "what's playing", "what is playing", "now playing",
-            "current song", "current track", "pause",
+            "current song", "current track", "what song", "what track",
+            # English — playback controls
+            "pause", "resume",
             "next track", "next song", "previous track", "previous song",
             "volume up", "volume down", "louder", "quieter", "softer",
             "stop music", "stop playing", "play music",
-            "resume", "what song", "what track",
+            # English — search/play
+            "play something", "play some", "play the song", "play the track",
+            "play the album", "put on some", "put on the",
+            "something by", "music by",
         ]
-        return any(m in text_lower for m in markers)
+        if any(m in text_lower for m in markers):
+            return True
+
+        # Heuristic: "speel/play/draai" + content that is not a smart-home device
+        smart_home_words = {
+            "lamp", "lampen", "licht", "lichten", "verlichting",
+            "schakelaar", "gordijn", "gordijnen", "thermostaat",
+            "switch", "light", "lights", "curtain", "curtains", "thermostat",
+        }
+        if text_lower.startswith(("speel ", "play ", "draai ")):
+            remaining = set(text_lower.split()[1:])
+            if not remaining.intersection(smart_home_words):
+                return True
+
+        return False
 
     # --- Dashboard ---
 
@@ -327,6 +359,16 @@ class HomeAssistantPlugin(PluginBase):
                 result = self._ma_handler.volume_up()
             elif cmd == "volume_down":
                 result = self._ma_handler.volume_down()
+            return {"success": result}
+
+        if action == "media/play-media":
+            if not self._ma_handler:
+                return {"error": "Music Assistant not available"}
+            query = data.get("query", "")
+            if not query:
+                return {"error": "No query provided"}
+            result = self._ma_handler.play_media(
+                query, media_type=data.get("media_type"))
             return {"success": result}
 
         return {"error": "Unknown action"}
