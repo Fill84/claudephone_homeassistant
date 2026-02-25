@@ -20,23 +20,50 @@ class MusicAssistantHandler:
     def is_available(self) -> bool:
         """Check if Music Assistant integration is present in Home Assistant.
 
-        Checks GET /api/services for the music_assistant domain.
+        Detection strategy (in order):
+        1. Check /api/services for 'music_assistant' or 'mass' domain
+        2. Fallback: check if any media_player entity has MA-specific attributes
         Result is cached for 5 minutes.
         """
         now = time.time()
         if self._ma_available is not None and (now - self._cache_ts) < 300:
             return self._ma_available
 
+        self._ma_available = False
+
+        # Strategy 1: check service domains
         try:
             services = self._ha.get_services()
-            self._ma_available = any(
-                s.get("domain") == "music_assistant" for s in services
-            )
+            domains = {s.get("domain") for s in services}
+            logger.info("MA detection - service domains: %s",
+                        [d for d in domains if d and ("mass" in d or "music" in d)])
+            if "music_assistant" in domains or "mass" in domains:
+                self._ma_available = True
         except Exception as e:
-            logger.warning("Music Assistant detection failed: %s", e)
-            self._ma_available = False
+            logger.warning("Music Assistant service detection failed: %s", e)
+
+        # Strategy 2: check entity attributes as fallback
+        if not self._ma_available:
+            try:
+                entities = self._ha._get_entities()
+                for e in entities:
+                    eid = e.get("entity_id", "")
+                    if not eid.startswith("media_player."):
+                        continue
+                    attrs = e.get("attributes", {})
+                    # MA players have mass_player_type, app_id="music_assistant",
+                    # or entity_id contains 'mass_'
+                    if (attrs.get("app_id") == "music_assistant"
+                            or "mass_player_type" in attrs
+                            or "mass_" in eid):
+                        self._ma_available = True
+                        logger.info("MA detected via entity: %s", eid)
+                        break
+            except Exception as e:
+                logger.warning("Music Assistant entity detection failed: %s", e)
 
         self._cache_ts = now
+        logger.info("Music Assistant available: %s", self._ma_available)
         return self._ma_available
 
     # --- Player State ---
@@ -50,15 +77,21 @@ class MusicAssistantHandler:
         ]
 
     def get_active_player(self) -> Optional[Dict[str, Any]]:
-        """Get the currently playing or paused media player.
+        """Get the currently active media player.
 
-        Priority: playing > paused. Returns None if no active player.
+        Priority: playing > paused > idle with media info.
+        Returns None if no player with media info is found.
         """
         players = self.get_players()
+        # Prefer playing, then paused
         for state in ("playing", "paused"):
             for p in players:
                 if p.get("state") == state:
                     return p
+        # Fallback: idle player that still has media info (recently stopped)
+        for p in players:
+            if p.get("attributes", {}).get("media_title"):
+                return p
         return None
 
     def get_now_playing_info(self) -> Dict[str, Any]:
