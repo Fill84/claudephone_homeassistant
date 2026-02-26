@@ -1,8 +1,12 @@
 """Home Assistant plugin - smart home device control via REST API."""
 
+import string
+from pathlib import Path
 from typing import Any, Dict, List
 
 from ..base import ConfigField, DashboardPage, DashboardWidget, PluginBase, PluginMeta
+
+_TEMPLATE_DIR = Path(__file__).parent / "templates"
 
 
 class HomeAssistantPlugin(PluginBase):
@@ -231,22 +235,30 @@ class HomeAssistantPlugin(PluginBase):
             return self._render_media_widget()
         return ""
 
+    def _render_template(self, name: str, **kwargs) -> str:
+        """Load an HTML template from the templates/ directory."""
+        path = _TEMPLATE_DIR / name
+        tpl = string.Template(path.read_text(encoding="utf-8"))
+        return tpl.safe_substitute(**kwargs)
+
     def _render_status_widget(self) -> str:
         """Compact overview widget for the dashboard."""
         connected = self._handler is not None
         base_url = self.context.get_env("HA_BASE_URL") if self.context else ""
 
-        return f"""
-        <div class="stat" style="margin-bottom:6px">
-            <span class="status-dot {'on' if connected else 'off'}"></span>
-            <span style="font-size:0.85rem">{'Connected' if connected else 'Disconnected'}</span>
-            {f'<span style="color:#475569;font-size:0.7rem;margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px" title="{base_url}">{base_url}</span>' if base_url else ''}
-        </div>
-        <div style="margin-top:8px;text-align:right">
-            <a href="/plugins/homeassistant/settings" onclick="event.preventDefault();navigate('/plugins/homeassistant/settings')"
-               style="color:#38bdf8;text-decoration:none;font-size:0.7rem">Settings →</a>
-        </div>
-        """
+        base_url_section = (
+            f'<span style="color:#475569;font-size:0.7rem;margin-left:auto;'
+            f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'
+            f'max-width:160px" title="{base_url}">{base_url}</span>'
+            if base_url else ""
+        )
+
+        return self._render_template(
+            "status_widget.html",
+            status_class="on" if connected else "off",
+            status_text="Connected" if connected else "Disconnected",
+            base_url_section=base_url_section,
+        )
 
     @property
     def dashboard_pages(self) -> List[DashboardPage]:
@@ -263,72 +275,11 @@ class HomeAssistantPlugin(PluginBase):
         base_url = self.context.get_env("HA_BASE_URL") if self.context else ""
         has_token = bool(self.context.get_env("HA_ACCESS_TOKEN")) if self.context else False
 
-        return f"""
-        <div class="grid">
-            <div class="card">
-                <h3>Connection</h3>
-                <div class="form-row">
-                    <label>Home Assistant URL</label>
-                    <div style="display:flex;gap:6px">
-                        <input id="ha-url" type="text" value="{base_url}"
-                            placeholder="https://ha.example.com" style="flex:1">
-                        <button class="btn-sm" onclick="hasSave('HA_BASE_URL', document.getElementById('ha-url').value)">Save</button>
-                    </div>
-                </div>
-                <div class="form-row">
-                    <label>Access Token</label>
-                    <div style="display:flex;gap:6px">
-                        <input id="ha-token" type="password" value=""
-                            placeholder="{'••••••••' if has_token else 'Long-lived access token'}"
-                            style="flex:1">
-                        <button class="btn-sm" onclick="hasSave('HA_ACCESS_TOKEN', document.getElementById('ha-token').value)">Save</button>
-                    </div>
-                    <small style="color:#64748b">Generate at your HA instance under Profile &gt; Long-Lived Access Tokens</small>
-                </div>
-                <div class="form-row">
-                    <button class="btn-sm" onclick="hasTest()">Test Connection</button>
-                    <span id="ha-test-result" style="margin-left:8px"></span>
-                </div>
-            </div>
-        </div>
-        <script>
-        async function hasSave(key, value) {{
-            if (!value.trim()) return;
-            try {{
-                const r = await fetch('/api/config/', {{
-                    method: 'PUT',
-                    headers: {{'Content-Type': 'application/json'}},
-                    body: JSON.stringify({{key, value: value.trim()}}),
-                }});
-                if (!r.ok) {{ toast('Save failed: HTTP ' + r.status, 'error'); return; }}
-                const d = await r.json();
-                if (d.needs_restart) toast(key + ' saved. Restart required.', 'warning');
-                else toast('Saved!', 'success');
-            }} catch(e) {{ toast('Save failed: ' + e, 'error'); }}
-        }}
-
-        async function hasTest() {{
-            const el = document.getElementById('ha-test-result');
-            el.innerHTML = 'Testing...';
-            el.style.color = '#94a3b8';
-            try {{
-                const r = await fetch('/api/plugins/homeassistant/test', {{method:'POST'}});
-                if (!r.ok) {{ el.innerHTML = 'HTTP ' + r.status; el.style.color = '#ef4444'; return; }}
-                const d = await r.json();
-                if (d.success) {{
-                    el.innerHTML = 'Connected';
-                    el.style.color = '#22c55e';
-                }} else {{
-                    el.innerHTML = 'Failed';
-                    el.style.color = '#ef4444';
-                }}
-            }} catch(e) {{
-                el.innerHTML = 'Error: ' + e;
-                el.style.color = '#ef4444';
-            }}
-        }}
-        </script>
-        """
+        return self._render_template(
+            "settings_page.html",
+            base_url=base_url,
+            token_placeholder="••••••••" if has_token else "Long-lived access token",
+        )
 
     # --- Music Assistant API & Widget ---
 
@@ -374,111 +325,4 @@ class HomeAssistantPlugin(PluginBase):
         return {"error": "Unknown action"}
 
     def _render_media_widget(self) -> str:
-        return """
-        <div id="ma-widget-content" style="color:#94a3b8;text-align:center;padding:8px;min-height:100px">
-            Loading...
-        </div>
-        <script>
-        (function() {
-            var ACTION = '/api/plugins/homeassistant/action';
-
-            function fmt(sec) {
-                if (sec == null) return '--:--';
-                var m = Math.floor(sec / 60);
-                var s = Math.floor(sec % 60);
-                return m + ':' + (s < 10 ? '0' : '') + s;
-            }
-
-            async function refresh() {
-                try {
-                    var r = await fetch(ACTION + '/media/now-playing', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
-                    var d = await r.json();
-                    var el = document.getElementById('ma-widget-content');
-                    if (!el) return;
-
-                    if (!d.available) {
-                        el.innerHTML = '<span style="color:#64748b;font-size:0.85rem">Nothing playing</span>';
-                        return;
-                    }
-
-                    var art = '';
-                    if (d.artwork_url) {
-                        art = '<img src="' + d.artwork_url + '" '
-                            + 'style="width:64px;height:64px;border-radius:6px;object-fit:cover;flex-shrink:0" '
-                            + 'onerror="this.style.display=\\'none\\'">';
-                    }
-
-                    var info = '<div style="flex:1;min-width:0;text-align:left">'
-                        + '<div style="font-weight:600;font-size:0.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e2e8f0">'
-                        + (d.title || 'Unknown') + '</div>'
-                        + '<div style="color:#94a3b8;font-size:0.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
-                        + (d.artist || '') + '</div>'
-                        + '<div style="color:#64748b;font-size:0.75rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
-                        + (d.album || '') + '</div>'
-                        + '</div>';
-
-                    var progress = '';
-                    if (d.duration) {
-                        var pct = d.position ? Math.min(100, (d.position / d.duration) * 100) : 0;
-                        progress = '<div style="margin-top:8px">'
-                            + '<div style="display:flex;justify-content:space-between;font-size:0.7rem;color:#64748b">'
-                            + '<span>' + fmt(d.position) + '</span>'
-                            + '<span>' + fmt(d.duration) + '</span></div>'
-                            + '<div style="background:#1e293b;border-radius:2px;height:3px;margin-top:2px">'
-                            + '<div style="background:#38bdf8;height:100%;border-radius:2px;width:'
-                            + pct + '%;transition:width 1s linear"></div></div></div>';
-                    }
-
-                    var playBtn = d.state === 'playing'
-                        ? '<button onclick="maCmd(\\'pause\\')" style="background:none;border:none;color:#e2e8f0;cursor:pointer;padding:4px;font-size:1.3rem" title="Pause">&#9208;</button>'
-                        : '<button onclick="maCmd(\\'play\\')" style="background:none;border:none;color:#e2e8f0;cursor:pointer;padding:4px;font-size:1.3rem" title="Play">&#9654;&#65039;</button>';
-
-                    var controls = '<div style="display:flex;justify-content:center;align-items:center;gap:16px;margin-top:8px">'
-                        + '<button onclick="maCmd(\\'previous\\')" style="background:none;border:none;color:#e2e8f0;cursor:pointer;padding:4px;font-size:1.1rem" title="Previous">&#9198;</button>'
-                        + playBtn
-                        + '<button onclick="maCmd(\\'next\\')" style="background:none;border:none;color:#e2e8f0;cursor:pointer;padding:4px;font-size:1.1rem" title="Next">&#9197;</button>'
-                        + '</div>';
-
-                    var volPct = d.volume != null ? Math.round(d.volume * 100) : 0;
-                    var volume = '<div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:0.75rem;color:#64748b">'
-                        + '<span>&#128264;</span>'
-                        + '<input type="range" min="0" max="100" value="' + volPct
-                        + '" style="flex:1;height:3px;accent-color:#38bdf8" '
-                        + 'onchange="maVolume(this.value)">'
-                        + '<span>' + volPct + '%</span></div>';
-
-                    el.innerHTML = '<div style="display:flex;gap:12px;align-items:center">'
-                        + art + info + '</div>' + progress + controls + volume;
-
-                } catch(e) {
-                    var el = document.getElementById('ma-widget-content');
-                    if (el) el.innerHTML = '<span style="color:#ef4444;font-size:0.85rem">Error loading player</span>';
-                }
-            }
-
-            window.maCmd = async function(cmd) {
-                try {
-                    await fetch(ACTION + '/media/command', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({command: cmd}),
-                    });
-                    setTimeout(refresh, 500);
-                } catch(e) {}
-            };
-
-            window.maVolume = async function(pct) {
-                try {
-                    await fetch(ACTION + '/media/command', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({command: 'volume', value: parseInt(pct) / 100}),
-                    });
-                } catch(e) {}
-            };
-
-            refresh();
-            setInterval(refresh, 5000);
-        })();
-        </script>
-        """
+        return self._render_template("media_player_widget.html")

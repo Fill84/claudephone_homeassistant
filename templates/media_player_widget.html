@@ -1,0 +1,171 @@
+<!-- Nothing playing (shown when no media active) -->
+<div id="ma-empty" style="color:#64748b;font-size:0.85rem;text-align:center;padding:8px">
+    Nothing playing
+</div>
+
+<!-- Player (hidden until data arrives) -->
+<div id="ma-player" style="display:none;padding:8px">
+
+    <!-- Track info + artwork -->
+    <div style="display:flex;gap:12px;align-items:center">
+        <img id="ma-art" src="" alt=""
+             style="width:64px;height:64px;border-radius:6px;object-fit:cover;flex-shrink:0;display:none"
+             onerror="this.style.display='none'">
+        <div style="flex:1;min-width:0;text-align:left">
+            <div id="ma-title"
+                 style="font-weight:600;font-size:0.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e2e8f0"></div>
+            <div id="ma-artist"
+                 style="color:#94a3b8;font-size:0.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+            <div id="ma-album"
+                 style="color:#64748b;font-size:0.75rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+        </div>
+    </div>
+
+    <!-- Progress bar -->
+    <div id="ma-progress" style="margin-top:8px;display:none">
+        <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:#64748b">
+            <span id="ma-pos">--:--</span>
+            <span id="ma-dur">--:--</span>
+        </div>
+        <div style="background:#1e293b;border-radius:2px;height:3px;margin-top:2px">
+            <div id="ma-bar" style="background:#38bdf8;height:100%;border-radius:2px;width:0%;transition:width 1s linear"></div>
+        </div>
+    </div>
+
+    <!-- Playback controls -->
+    <div style="display:flex;justify-content:center;align-items:center;gap:16px;margin-top:8px">
+        <button onclick="maCmd('previous')"
+                style="background:none;border:none;color:#e2e8f0;cursor:pointer;padding:4px;font-size:1.1rem"
+                title="Previous">&#9198;</button>
+        <button id="ma-play-btn" onclick="maCmd('play')"
+                style="background:none;border:none;color:#e2e8f0;cursor:pointer;padding:4px;font-size:1.3rem"
+                title="Play">&#9654;&#65039;</button>
+        <button onclick="maCmd('next')"
+                style="background:none;border:none;color:#e2e8f0;cursor:pointer;padding:4px;font-size:1.1rem"
+                title="Next">&#9197;</button>
+    </div>
+
+    <!-- Volume slider -->
+    <div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:0.75rem;color:#64748b">
+        <span>&#128264;</span>
+        <input id="ma-vol" type="range" min="0" max="100" value="0"
+               style="flex:1;height:3px;accent-color:#38bdf8"
+               onchange="maVolume(this.value)">
+        <span id="ma-vol-pct">0%</span>
+    </div>
+</div>
+
+<!-- Error state -->
+<div id="ma-error" style="display:none;color:#ef4444;font-size:0.85rem;text-align:center;padding:8px">
+    Error loading player
+</div>
+
+<script>
+(function() {
+    var ACTION = '/api/plugins/homeassistant/action';
+
+    function fmt(sec) {
+        if (sec == null) return '--:--';
+        var m = Math.floor(sec / 60);
+        var s = Math.floor(sec % 60);
+        return m + ':' + (s < 10 ? '0' : '') + s;
+    }
+
+    function show(id) { document.getElementById(id).style.display = ''; }
+    function hide(id) { document.getElementById(id).style.display = 'none'; }
+    function txt(id, v) { document.getElementById(id).textContent = v; }
+
+    async function refresh() {
+        try {
+            var r = await fetch(ACTION + '/media/now-playing', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: '{}'
+            });
+            var d = await r.json();
+
+            hide('ma-error');
+
+            if (!d.available) {
+                show('ma-empty');
+                hide('ma-player');
+                return;
+            }
+
+            hide('ma-empty');
+            show('ma-player');
+
+            // Artwork
+            var art = document.getElementById('ma-art');
+            if (d.artwork_url) {
+                art.src = d.artwork_url;
+                art.style.display = '';
+            } else {
+                art.style.display = 'none';
+            }
+
+            // Track info
+            txt('ma-title', d.title || 'Unknown');
+            txt('ma-artist', d.artist || '');
+            txt('ma-album', d.album || '');
+
+            // Progress
+            if (d.duration) {
+                show('ma-progress');
+                var pct = d.position ? Math.min(100, (d.position / d.duration) * 100) : 0;
+                txt('ma-pos', fmt(d.position));
+                txt('ma-dur', fmt(d.duration));
+                document.getElementById('ma-bar').style.width = pct + '%';
+            } else {
+                hide('ma-progress');
+            }
+
+            // Play/pause button
+            var btn = document.getElementById('ma-play-btn');
+            if (d.state === 'playing') {
+                btn.innerHTML = '&#9208;';
+                btn.title = 'Pause';
+                btn.onclick = function() { maCmd('pause'); };
+            } else {
+                btn.innerHTML = '&#9654;&#65039;';
+                btn.title = 'Play';
+                btn.onclick = function() { maCmd('play'); };
+            }
+
+            // Volume
+            var volPct = d.volume != null ? Math.round(d.volume * 100) : 0;
+            document.getElementById('ma-vol').value = volPct;
+            txt('ma-vol-pct', volPct + '%');
+
+        } catch(e) {
+            hide('ma-empty');
+            hide('ma-player');
+            show('ma-error');
+        }
+    }
+
+    window.maCmd = async function(cmd) {
+        try {
+            await fetch(ACTION + '/media/command', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({command: cmd}),
+            });
+            setTimeout(refresh, 500);
+        } catch(e) {}
+    };
+
+    window.maVolume = async function(pct) {
+        try {
+            await fetch(ACTION + '/media/command', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({command: 'volume', value: parseInt(pct) / 100}),
+            });
+        } catch(e) {}
+    };
+
+    refresh();
+    setInterval(refresh, 5000);
+})();
+</script>

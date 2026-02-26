@@ -1,0 +1,63 @@
+<div class="grid">
+    <div class="card">
+        <h3>Connection</h3>
+        <div class="form-row">
+            <label>Home Assistant URL</label>
+            <div style="display:flex;gap:6px">
+                <input id="ha-url" type="text" value="$base_url"
+                    placeholder="https://ha.example.com" style="flex:1">
+                <button class="btn-sm" onclick="hasSave('HA_BASE_URL', document.getElementById('ha-url').value)">Save</button>
+            </div>
+        </div>
+        <div class="form-row">
+            <label>Access Token</label>
+            <div style="display:flex;gap:6px">
+                <input id="ha-token" type="password" value=""
+                    placeholder="$token_placeholder" style="flex:1">
+                <button class="btn-sm" onclick="hasSave('HA_ACCESS_TOKEN', document.getElementById('ha-token').value)">Save</button>
+            </div>
+            <small style="color:#64748b">Generate at your HA instance under Profile &gt; Long-Lived Access Tokens</small>
+        </div>
+        <div class="form-row">
+            <button class="btn-sm" onclick="hasTest()">Test Connection</button>
+            <span id="ha-test-result" style="margin-left:8px"></span>
+        </div>
+    </div>
+</div>
+<script>
+async function hasSave(key, value) {
+    if (!value.trim()) return;
+    try {
+        const r = await fetch('/api/config/', {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({key, value: value.trim()}),
+        });
+        if (!r.ok) { toast('Save failed: HTTP ' + r.status, 'error'); return; }
+        const d = await r.json();
+        if (d.needs_restart) toast(key + ' saved. Restart required.', 'warning');
+        else toast('Saved!', 'success');
+    } catch(e) { toast('Save failed: ' + e, 'error'); }
+}
+
+async function hasTest() {
+    const el = document.getElementById('ha-test-result');
+    el.innerHTML = 'Testing...';
+    el.style.color = '#94a3b8';
+    try {
+        const r = await fetch('/api/plugins/homeassistant/test', {method:'POST'});
+        if (!r.ok) { el.innerHTML = 'HTTP ' + r.status; el.style.color = '#ef4444'; return; }
+        const d = await r.json();
+        if (d.success) {
+            el.innerHTML = 'Connected';
+            el.style.color = '#22c55e';
+        } else {
+            el.innerHTML = 'Failed';
+            el.style.color = '#ef4444';
+        }
+    } catch(e) {
+        el.innerHTML = 'Error: ' + e;
+        el.style.color = '#ef4444';
+    }
+}
+</script>
