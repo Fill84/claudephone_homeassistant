@@ -134,6 +134,43 @@ class MusicAssistantHandler:
             "content_type": attrs.get("media_content_type", ""),
         }
 
+    def get_all_players_info(self) -> List[Dict[str, Any]]:
+        """Get structured info for ALL media_player entities."""
+        players = self.get_players()
+        if not players:
+            return []
+
+        result = []
+        for player in players:
+            attrs = player.get("attributes", {})
+            entity_id = player.get("entity_id", "")
+
+            artwork = attrs.get("entity_picture", "")
+            if artwork and not artwork.startswith("http"):
+                artwork = f"{self._ha.base_url}{artwork}"
+
+            result.append({
+                "entity_id": entity_id,
+                "state": player.get("state", "unknown"),
+                "player_name": attrs.get("friendly_name", entity_id),
+                "title": attrs.get("media_title", ""),
+                "artist": attrs.get("media_artist", ""),
+                "album": attrs.get("media_album_name", ""),
+                "duration": attrs.get("media_duration"),
+                "position": attrs.get("media_position"),
+                "artwork_url": artwork,
+                "volume": attrs.get("volume_level"),
+                "shuffle": attrs.get("shuffle", False),
+                "repeat": attrs.get("repeat", "off"),
+                "source": attrs.get("source", ""),
+                "content_type": attrs.get("media_content_type", ""),
+            })
+
+        state_order = {"playing": 0, "paused": 1, "idle": 2, "standby": 3, "off": 4, "unavailable": 5}
+        result.sort(key=lambda p: state_order.get(p["state"], 99))
+
+        return result
+
     # --- Playback Controls ---
 
     def play(self, entity_id: str = None) -> bool:

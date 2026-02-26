@@ -220,9 +220,9 @@ class HomeAssistantPlugin(PluginBase):
             widgets.append(
                 DashboardWidget(
                     id="ha-media-player",
-                    title="Now Playing",
+                    title="Media Players",
                     icon="🎵",
-                    size="medium",
+                    size="large",
                     order=11,
                 ),
             )
@@ -284,6 +284,11 @@ class HomeAssistantPlugin(PluginBase):
     # --- Music Assistant API & Widget ---
 
     def handle_api_action(self, action: str, data: dict) -> dict:
+        if action == "media/all-players":
+            if self._ma_handler:
+                return {"players": self._ma_handler.get_all_players_info()}
+            return {"players": []}
+
         if action == "media/now-playing":
             if self._ma_handler:
                 return self._ma_handler.get_now_playing_info()
@@ -293,23 +298,25 @@ class HomeAssistantPlugin(PluginBase):
             if not self._ma_handler:
                 return {"error": "Music Assistant not available"}
             cmd = data.get("command", "")
+            eid = data.get("entity_id")
             result = False
             if cmd == "play":
-                result = self._ma_handler.play()
+                result = self._ma_handler.play(entity_id=eid)
             elif cmd == "pause":
-                result = self._ma_handler.pause()
+                result = self._ma_handler.pause(entity_id=eid)
             elif cmd == "stop":
-                result = self._ma_handler.stop()
+                result = self._ma_handler.stop(entity_id=eid)
             elif cmd == "next":
-                result = self._ma_handler.next_track()
+                result = self._ma_handler.next_track(entity_id=eid)
             elif cmd == "previous":
-                result = self._ma_handler.previous_track()
+                result = self._ma_handler.previous_track(entity_id=eid)
             elif cmd == "volume":
-                result = self._ma_handler.set_volume(float(data.get("value", 0.5)))
+                result = self._ma_handler.set_volume(
+                    float(data.get("value", 0.5)), entity_id=eid)
             elif cmd == "volume_up":
-                result = self._ma_handler.volume_up()
+                result = self._ma_handler.volume_up(entity_id=eid)
             elif cmd == "volume_down":
-                result = self._ma_handler.volume_down()
+                result = self._ma_handler.volume_down(entity_id=eid)
             return {"success": result}
 
         if action == "media/play-media":

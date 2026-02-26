@@ -1,63 +1,14 @@
-<!-- Nothing playing (shown when no media active) -->
+<!-- Container for all players (JS will populate) -->
+<div id="ma-players" style="display:flex;flex-direction:column;gap:10px;padding:4px"></div>
+
+<!-- Empty state -->
 <div id="ma-empty" style="color:#64748b;font-size:0.85rem;text-align:center;padding:8px">
-    Nothing playing
-</div>
-
-<!-- Player (hidden until data arrives) -->
-<div id="ma-player" style="display:none;padding:8px">
-
-    <!-- Track info + artwork -->
-    <div style="display:flex;gap:12px;align-items:center">
-        <img id="ma-art" src="" alt=""
-             style="width:64px;height:64px;border-radius:6px;object-fit:cover;flex-shrink:0;display:none"
-             onerror="this.style.display='none'">
-        <div style="flex:1;min-width:0;text-align:left">
-            <div id="ma-title"
-                 style="font-weight:600;font-size:0.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e2e8f0"></div>
-            <div id="ma-artist"
-                 style="color:#94a3b8;font-size:0.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
-            <div id="ma-album"
-                 style="color:#64748b;font-size:0.75rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
-        </div>
-    </div>
-
-    <!-- Progress bar -->
-    <div id="ma-progress" style="margin-top:8px;display:none">
-        <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:#64748b">
-            <span id="ma-pos">--:--</span>
-            <span id="ma-dur">--:--</span>
-        </div>
-        <div style="background:#1e293b;border-radius:2px;height:3px;margin-top:2px">
-            <div id="ma-bar" style="background:#38bdf8;height:100%;border-radius:2px;width:0%;transition:width 1s linear"></div>
-        </div>
-    </div>
-
-    <!-- Playback controls -->
-    <div style="display:flex;justify-content:center;align-items:center;gap:16px;margin-top:8px">
-        <button onclick="maCmd('previous')"
-                style="background:none;border:none;color:#e2e8f0;cursor:pointer;padding:4px;font-size:1.1rem"
-                title="Previous">&#9198;</button>
-        <button id="ma-play-btn" onclick="maCmd('play')"
-                style="background:none;border:none;color:#e2e8f0;cursor:pointer;padding:4px;font-size:1.3rem"
-                title="Play">&#9654;&#65039;</button>
-        <button onclick="maCmd('next')"
-                style="background:none;border:none;color:#e2e8f0;cursor:pointer;padding:4px;font-size:1.1rem"
-                title="Next">&#9197;</button>
-    </div>
-
-    <!-- Volume slider -->
-    <div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:0.75rem;color:#64748b">
-        <span>&#128264;</span>
-        <input id="ma-vol" type="range" min="0" max="100" value="0"
-               style="flex:1;height:3px;accent-color:#38bdf8"
-               onchange="maVolume(this.value)">
-        <span id="ma-vol-pct">0%</span>
-    </div>
+    No media players found
 </div>
 
 <!-- Error state -->
 <div id="ma-error" style="display:none;color:#ef4444;font-size:0.85rem;text-align:center;padding:8px">
-    Error loading player
+    Error loading players
 </div>
 
 <script>
@@ -71,96 +22,165 @@
         return m + ':' + (s < 10 ? '0' : '') + s;
     }
 
-    function show(id) { document.getElementById(id).style.display = ''; }
-    function hide(id) { document.getElementById(id).style.display = 'none'; }
-    function txt(id, v) { document.getElementById(id).textContent = v; }
+    function esc(str) {
+        var d = document.createElement('div');
+        d.textContent = str;
+        return d.innerHTML;
+    }
+
+    function escAttr(str) {
+        return str.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function stateColor(state) {
+        if (state === 'playing') return '#22c55e';
+        if (state === 'paused') return '#f59e0b';
+        return '#64748b';
+    }
+
+    function buildPlayerCard(p) {
+        var isInactive = (p.state === 'off' || p.state === 'unavailable');
+        var opacity = isInactive ? '0.45' : '1';
+        var hasMedia = !!(p.title || p.artist);
+        var eid = escAttr(p.entity_id);
+
+        var h = '';
+        h += '<div style="opacity:' + opacity + ';background:#1e293b;border-radius:8px;padding:10px">';
+
+        // Player name + state badge
+        h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">';
+        h += '<span style="font-weight:600;font-size:0.85rem;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">';
+        h += esc(p.player_name);
+        h += '</span>';
+        h += '<span style="font-size:0.7rem;color:' + stateColor(p.state) + ';text-transform:capitalize">';
+        h += esc(p.state);
+        h += '</span>';
+        h += '</div>';
+
+        // Track info + artwork
+        if (hasMedia) {
+            h += '<div style="display:flex;gap:10px;align-items:center">';
+
+            if (p.artwork_url) {
+                h += '<img src="' + escAttr(p.artwork_url) + '" alt="" ';
+                h += 'style="width:48px;height:48px;border-radius:4px;object-fit:cover;flex-shrink:0" ';
+                h += 'onerror="this.style.display=\'none\'">';
+            }
+
+            h += '<div style="flex:1;min-width:0">';
+            h += '<div style="font-size:0.8rem;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">';
+            h += esc(p.title || 'Unknown');
+            h += '</div>';
+            if (p.artist) {
+                h += '<div style="font-size:0.75rem;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">';
+                h += esc(p.artist);
+                h += '</div>';
+            }
+            if (p.album) {
+                h += '<div style="font-size:0.7rem;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">';
+                h += esc(p.album);
+                h += '</div>';
+            }
+            h += '</div></div>';
+
+            // Progress bar
+            if (p.duration) {
+                var pct = p.position ? Math.min(100, (p.position / p.duration) * 100) : 0;
+                h += '<div style="margin-top:6px">';
+                h += '<div style="display:flex;justify-content:space-between;font-size:0.65rem;color:#64748b">';
+                h += '<span>' + fmt(p.position) + '</span>';
+                h += '<span>' + fmt(p.duration) + '</span>';
+                h += '</div>';
+                h += '<div style="background:#0f172a;border-radius:2px;height:2px;margin-top:2px">';
+                h += '<div style="background:#38bdf8;height:100%;border-radius:2px;width:' + pct + '%;transition:width 1s linear"></div>';
+                h += '</div></div>';
+            }
+        }
+
+        // Controls (skip for unavailable players)
+        if (p.state !== 'unavailable') {
+            // Playback controls
+            h += '<div style="display:flex;justify-content:center;align-items:center;gap:12px;margin-top:6px">';
+            h += '<button onclick="maCmd(\'previous\',\'' + eid + '\')" style="background:none;border:none;color:#e2e8f0;cursor:pointer;padding:2px;font-size:0.9rem" title="Previous">&#9198;</button>';
+
+            if (p.state === 'playing') {
+                h += '<button onclick="maCmd(\'pause\',\'' + eid + '\')" style="background:none;border:none;color:#e2e8f0;cursor:pointer;padding:2px;font-size:1.1rem" title="Pause">&#9208;</button>';
+            } else {
+                h += '<button onclick="maCmd(\'play\',\'' + eid + '\')" style="background:none;border:none;color:#e2e8f0;cursor:pointer;padding:2px;font-size:1.1rem" title="Play">&#9654;&#65039;</button>';
+            }
+
+            h += '<button onclick="maCmd(\'next\',\'' + eid + '\')" style="background:none;border:none;color:#e2e8f0;cursor:pointer;padding:2px;font-size:0.9rem" title="Next">&#9197;</button>';
+            h += '</div>';
+
+            // Volume slider
+            var volPct = p.volume != null ? Math.round(p.volume * 100) : 0;
+            h += '<div style="display:flex;align-items:center;gap:4px;margin-top:4px;font-size:0.7rem;color:#64748b">';
+            h += '<span>&#128264;</span>';
+            h += '<input type="range" min="0" max="100" value="' + volPct + '" ';
+            h += 'style="flex:1;height:2px;accent-color:#38bdf8" ';
+            h += 'onchange="maVolume(this.value,\'' + eid + '\')">';
+            h += '<span>' + volPct + '%</span>';
+            h += '</div>';
+        }
+
+        h += '</div>';
+        return h;
+    }
 
     async function refresh() {
         try {
-            var r = await fetch(ACTION + '/media/now-playing', {
+            var r = await fetch(ACTION + '/media/all-players', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: '{}'
             });
             var d = await r.json();
+            var players = d.players || [];
 
-            hide('ma-error');
+            document.getElementById('ma-error').style.display = 'none';
 
-            if (!d.available) {
-                show('ma-empty');
-                hide('ma-player');
+            if (!players.length) {
+                document.getElementById('ma-empty').style.display = '';
+                document.getElementById('ma-players').innerHTML = '';
                 return;
             }
 
-            hide('ma-empty');
-            show('ma-player');
+            document.getElementById('ma-empty').style.display = 'none';
 
-            // Artwork
-            var art = document.getElementById('ma-art');
-            if (d.artwork_url) {
-                art.src = d.artwork_url;
-                art.style.display = '';
-            } else {
-                art.style.display = 'none';
+            var html = '';
+            for (var i = 0; i < players.length; i++) {
+                html += buildPlayerCard(players[i]);
             }
-
-            // Track info
-            txt('ma-title', d.title || 'Unknown');
-            txt('ma-artist', d.artist || '');
-            txt('ma-album', d.album || '');
-
-            // Progress
-            if (d.duration) {
-                show('ma-progress');
-                var pct = d.position ? Math.min(100, (d.position / d.duration) * 100) : 0;
-                txt('ma-pos', fmt(d.position));
-                txt('ma-dur', fmt(d.duration));
-                document.getElementById('ma-bar').style.width = pct + '%';
-            } else {
-                hide('ma-progress');
-            }
-
-            // Play/pause button
-            var btn = document.getElementById('ma-play-btn');
-            if (d.state === 'playing') {
-                btn.innerHTML = '&#9208;';
-                btn.title = 'Pause';
-                btn.onclick = function() { maCmd('pause'); };
-            } else {
-                btn.innerHTML = '&#9654;&#65039;';
-                btn.title = 'Play';
-                btn.onclick = function() { maCmd('play'); };
-            }
-
-            // Volume
-            var volPct = d.volume != null ? Math.round(d.volume * 100) : 0;
-            document.getElementById('ma-vol').value = volPct;
-            txt('ma-vol-pct', volPct + '%');
+            document.getElementById('ma-players').innerHTML = html;
 
         } catch(e) {
-            hide('ma-empty');
-            hide('ma-player');
-            show('ma-error');
+            document.getElementById('ma-empty').style.display = 'none';
+            document.getElementById('ma-players').innerHTML = '';
+            document.getElementById('ma-error').style.display = '';
         }
     }
 
-    window.maCmd = async function(cmd) {
+    window.maCmd = async function(cmd, entityId) {
         try {
+            var body = {command: cmd};
+            if (entityId) body.entity_id = entityId;
             await fetch(ACTION + '/media/command', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({command: cmd}),
+                body: JSON.stringify(body),
             });
             setTimeout(refresh, 500);
         } catch(e) {}
     };
 
-    window.maVolume = async function(pct) {
+    window.maVolume = async function(pct, entityId) {
         try {
+            var body = {command: 'volume', value: parseInt(pct) / 100};
+            if (entityId) body.entity_id = entityId;
             await fetch(ACTION + '/media/command', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({command: 'volume', value: parseInt(pct) / 100}),
+                body: JSON.stringify(body),
             });
         } catch(e) {}
     };
