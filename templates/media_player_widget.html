@@ -1,5 +1,178 @@
-<!-- Container for all players (JS will populate) -->
-<div id="ma-players" style="display:flex;flex-direction:column;gap:10px;padding:4px"></div>
+<!-- Scoped styles -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+<style>
+    .material-icons {
+        font-size: 24px;
+        color: #fff;
+        cursor: pointer;
+    }
+
+    .ma-card {
+        background: #1e293b;
+        border-radius: 8px;
+        padding: 8px 10px;
+        position: relative;
+    }
+
+    .ma-card[data-inactive="true"] {
+        opacity: 0.45;
+    }
+
+    /* Header: player name + state */
+    .ma-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 4px;
+    }
+
+    .ma-name {
+        font-weight: 600;
+        font-size: 0.7rem;
+        color: #94a3b8;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .ma-state {
+        font-size: 0.65rem;
+        text-transform: capitalize;
+    }
+
+    /* Main row: artwork | info | controls */
+    .ma-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .ma-art {
+        width: 44px;
+        height: 44px;
+        border-radius: 4px;
+        object-fit: cover;
+        flex-shrink: 0;
+        display: none;
+    }
+
+    .ma-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .ma-title {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #e2e8f0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .ma-artist {
+        font-size: 0.72rem;
+        color: #94a3b8;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* Controls cluster */
+    .ma-controls {
+        display: none;
+        align-items: center;
+        gap: 6px;
+        flex-shrink: 0;
+    }
+
+    .ma-controls button {
+        background: none;
+        border: none;
+        color: #e2e8f0;
+        cursor: pointer;
+        padding: 2px;
+        font-size: 0.85rem;
+        line-height: 1;
+    }
+
+    .ma-controls button[data-cmd="playpause"] {
+        font-size: 1.05rem;
+    }
+
+    /* Volume: icon in row, vertical slider on hover */
+    .ma-vol-wrap {
+        position: relative;
+        display: flex;
+        align-items: center;
+    }
+
+    .ma-vol-popup {
+        display: none;
+        position: absolute;
+        bottom: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #0f172a;
+        border-radius: 6px;
+        padding: 10px 6px;
+        margin-bottom: 4px;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        z-index: 10;
+    }
+
+    .ma-vol-wrap:hover .ma-vol-popup,
+    .ma-vol-wrap:focus-within .ma-vol-popup,
+    .ma-vol-wrap .ma-vol-popup:hover {
+        display: flex;
+    }
+
+    .ma-vol-popup input[type="range"] {
+        writing-mode: vertical-lr;
+        direction: rtl;
+        width: 4px;
+        height: 80px;
+        accent-color: #38bdf8;
+    }
+
+    .ma-vol-pct {
+        font-size: 0.6rem;
+        color: #94a3b8;
+    }
+
+    /* Progress bar */
+    .ma-progress {
+        display: none;
+        margin-top: 4px;
+    }
+
+    .ma-progress-times {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.6rem;
+        color: #64748b;
+    }
+
+    .ma-progress-track {
+        background: #0f172a;
+        border-radius: 2px;
+        height: 2px;
+        margin-top: 2px;
+    }
+
+    .ma-progress-bar {
+        background: #38bdf8;
+        height: 100%;
+        border-radius: 2px;
+        width: 0%;
+        transition: width 1s linear;
+    }
+</style>
+
+<!-- Container for all players -->
+<div id="ma-players" style="display:flex;flex-direction:column;gap:8px;padding:4px"></div>
 
 <!-- Empty state -->
 <div id="ma-empty" style="color:#64748b;font-size:0.85rem;text-align:center;padding:8px">
@@ -11,181 +184,197 @@
     Error loading players
 </div>
 
+<!-- Player card template -->
+<template id="ma-card-tpl">
+    <div class="ma-card">
+        <!-- Header -->
+        <div class="ma-header">
+            <span class="ma-name" data-field="player_name"></span>
+            <span class="ma-state" data-field="state"></span>
+        </div>
+
+        <!-- Main row: artwork | info | controls | volume -->
+        <div class="ma-row">
+            <img class="ma-art" data-field="artwork" alt="" onerror="this.style.display='none'">
+
+            <div class="ma-info">
+                <div class="ma-title" data-field="title"></div>
+                <div class="ma-artist" data-field="artist"></div>
+            </div>
+
+            <div class="ma-controls" data-section="controls">
+                <button data-cmd="previous" title="Previous">
+                    <span class="material-icons">skip_previous</span>
+                </button>
+                <button data-cmd="playpause" title="Play">
+                    <span class="material-icons">play_arrow</span>
+                </button>
+                <button data-cmd="next" title="Next">
+                    <span class="material-icons">skip_next</span>
+                </button>
+
+                <div class="ma-vol-wrap">
+                    <button type="button">
+                        <span class="material-icons">volume_up</span>
+                    </button>
+                    <div class="ma-vol-popup">
+                        <span class="ma-vol-pct" data-field="volume_pct">0%</span>
+                        <input data-field="volume" type="range" min="0" max="100" value="0">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Progress bar -->
+        <div class="ma-progress" data-section="progress">
+            <div class="ma-progress-times">
+                <span data-field="position">--:--</span>
+                <span data-field="duration">--:--</span>
+            </div>
+            <div class="ma-progress-track">
+                <div class="ma-progress-bar" data-field="bar"></div>
+            </div>
+        </div>
+    </div>
+</template>
+
 <script>
-(function() {
-    var ACTION = '/api/plugins/homeassistant/action';
+    (function () {
+        var ACTION = '/api/plugins/homeassistant/action';
+        var tpl = document.getElementById('ma-card-tpl');
 
-    function fmt(sec) {
-        if (sec == null) return '--:--';
-        var m = Math.floor(sec / 60);
-        var s = Math.floor(sec % 60);
-        return m + ':' + (s < 10 ? '0' : '') + s;
-    }
+        function fmt(sec) {
+            if (sec == null) return '--:--';
+            var m = Math.floor(sec / 60);
+            var s = Math.floor(sec % 60);
+            return m + ':' + (s < 10 ? '0' : '') + s;
+        }
 
-    function esc(str) {
-        var d = document.createElement('div');
-        d.textContent = str;
-        return d.innerHTML;
-    }
+        function stateColor(state) {
+            if (state === 'playing') return '<span class="material-icons">pause</span>';
+            if (state === 'paused') return '<span class="material-icons">play_arrow</span>';
+            return '<span class="material-icons">pause</span>';
+        }
 
-    function escAttr(str) {
-        return str.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    }
+        function buildCard(p) {
+            var card = tpl.content.firstElementChild.cloneNode(true);
+            var eid = p.entity_id;
+            var isInactive = p.state === 'off' || p.state === 'unavailable';
 
-    function stateColor(state) {
-        if (state === 'playing') return '#22c55e';
-        if (state === 'paused') return '#f59e0b';
-        return '#64748b';
-    }
+            if (isInactive) card.dataset.inactive = 'true';
+            card.dataset.entityId = eid;
 
-    function buildPlayerCard(p) {
-        var isInactive = (p.state === 'off' || p.state === 'unavailable');
-        var opacity = isInactive ? '0.45' : '1';
-        var hasMedia = !!(p.title || p.artist);
-        var eid = escAttr(p.entity_id);
+            // Header
+            card.querySelector('[data-field="player_name"]').textContent = p.player_name;
+            var stateEl = card.querySelector('[data-field="state"]');
+            stateEl.textContent = p.state;
+            stateEl.style.color = stateColor(p.state);
 
-        var h = '';
-        h += '<div style="opacity:' + opacity + ';background:#1e293b;border-radius:8px;padding:10px">';
-
-        // Player name + state badge
-        h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">';
-        h += '<span style="font-weight:600;font-size:0.85rem;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">';
-        h += esc(p.player_name);
-        h += '</span>';
-        h += '<span style="font-size:0.7rem;color:' + stateColor(p.state) + ';text-transform:capitalize">';
-        h += esc(p.state);
-        h += '</span>';
-        h += '</div>';
-
-        // Track info + artwork
-        if (hasMedia) {
-            h += '<div style="display:flex;gap:10px;align-items:center">';
-
+            // Artwork
             if (p.artwork_url) {
-                h += '<img src="' + escAttr(p.artwork_url) + '" alt="" ';
-                h += 'style="width:48px;height:48px;border-radius:4px;object-fit:cover;flex-shrink:0" ';
-                h += 'onerror="this.style.display=\'none\'">';
+                var art = card.querySelector('[data-field="artwork"]');
+                art.src = p.artwork_url;
+                art.style.display = 'flex';
             }
 
-            h += '<div style="flex:1;min-width:0">';
-            h += '<div style="font-size:0.8rem;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">';
-            h += esc(p.title || 'Unknown');
-            h += '</div>';
-            if (p.artist) {
-                h += '<div style="font-size:0.75rem;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">';
-                h += esc(p.artist);
-                h += '</div>';
-            }
-            if (p.album) {
-                h += '<div style="font-size:0.7rem;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">';
-                h += esc(p.album);
-                h += '</div>';
-            }
-            h += '</div></div>';
+            // Track info
+            card.querySelector('[data-field="title"]').textContent = p.title || '';
+            card.querySelector('[data-field="artist"]').textContent = p.artist || '';
 
-            // Progress bar
-            if (p.duration) {
+            // Progress
+            if (p.duration && (p.title || p.artist)) {
+                var prog = card.querySelector('[data-section="progress"]');
+                prog.style.display = '';
                 var pct = p.position ? Math.min(100, (p.position / p.duration) * 100) : 0;
-                h += '<div style="margin-top:6px">';
-                h += '<div style="display:flex;justify-content:space-between;font-size:0.65rem;color:#64748b">';
-                h += '<span>' + fmt(p.position) + '</span>';
-                h += '<span>' + fmt(p.duration) + '</span>';
-                h += '</div>';
-                h += '<div style="background:#0f172a;border-radius:2px;height:2px;margin-top:2px">';
-                h += '<div style="background:#38bdf8;height:100%;border-radius:2px;width:' + pct + '%;transition:width 1s linear"></div>';
-                h += '</div></div>';
-            }
-        }
-
-        // Controls (skip for unavailable players)
-        if (p.state !== 'unavailable') {
-            // Playback controls
-            h += '<div style="display:flex;justify-content:center;align-items:center;gap:12px;margin-top:6px">';
-            h += '<button onclick="maCmd(\'previous\',\'' + eid + '\')" style="background:none;border:none;color:#e2e8f0;cursor:pointer;padding:2px;font-size:0.9rem" title="Previous">&#9198;</button>';
-
-            if (p.state === 'playing') {
-                h += '<button onclick="maCmd(\'pause\',\'' + eid + '\')" style="background:none;border:none;color:#e2e8f0;cursor:pointer;padding:2px;font-size:1.1rem" title="Pause">&#9208;</button>';
-            } else {
-                h += '<button onclick="maCmd(\'play\',\'' + eid + '\')" style="background:none;border:none;color:#e2e8f0;cursor:pointer;padding:2px;font-size:1.1rem" title="Play">&#9654;&#65039;</button>';
+                card.querySelector('[data-field="position"]').textContent = fmt(p.position);
+                card.querySelector('[data-field="duration"]').textContent = fmt(p.duration);
+                card.querySelector('[data-field="bar"]').style.width = pct + '%';
             }
 
-            h += '<button onclick="maCmd(\'next\',\'' + eid + '\')" style="background:none;border:none;color:#e2e8f0;cursor:pointer;padding:2px;font-size:0.9rem" title="Next">&#9197;</button>';
-            h += '</div>';
+            // Controls
+            if (p.state !== 'unavailable') {
+                var ctrl = card.querySelector('[data-section="controls"]');
+                ctrl.style.display = 'flex';
 
-            // Volume slider
-            var volPct = p.volume != null ? Math.round(p.volume * 100) : 0;
-            h += '<div style="display:flex;align-items:center;gap:4px;margin-top:4px;font-size:0.7rem;color:#64748b">';
-            h += '<span>&#128264;</span>';
-            h += '<input type="range" min="0" max="100" value="' + volPct + '" ';
-            h += 'style="flex:1;height:2px;accent-color:#38bdf8" ';
-            h += 'onchange="maVolume(this.value,\'' + eid + '\')">';
-            h += '<span>' + volPct + '%</span>';
-            h += '</div>';
+                var ppBtn = card.querySelector('[data-cmd="playpause"]');
+                if (p.state === 'playing') {
+                    ppBtn.innerHTML = '<span class="material-icons">pause</span>';
+                    ppBtn.title = 'Pause';
+                }
+
+                card.querySelector('[data-cmd="previous"]').addEventListener('click', function () { sendCmd('previous', eid); });
+                ppBtn.addEventListener('click', function () { sendCmd(p.state === 'playing' ? 'pause' : 'play', eid); });
+                card.querySelector('[data-cmd="next"]').addEventListener('click', function () { sendCmd('next', eid); });
+
+                // Volume
+                var volPct = p.volume != null ? Math.round(p.volume * 100) : 0;
+                card.querySelector('[data-field="volume"]').value = volPct;
+                card.querySelector('[data-field="volume_pct"]').textContent = volPct + '%';
+                card.querySelector('[data-field="volume"]').addEventListener('input', function () {
+                    card.querySelector('[data-field="volume_pct"]').textContent = this.value + '%';
+                });
+                card.querySelector('[data-field="volume"]').addEventListener('change', function () {
+                    sendVolume(this.value, eid);
+                });
+            }
+
+            return card;
         }
 
-        h += '</div>';
-        return h;
-    }
+        async function refresh() {
+            try {
+                var r = await fetch(ACTION + '/media/all-players', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: '{}'
+                });
+                var d = await r.json();
+                var players = d.players || [];
 
-    async function refresh() {
-        try {
-            var r = await fetch(ACTION + '/media/all-players', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: '{}'
-            });
-            var d = await r.json();
-            var players = d.players || [];
+                document.getElementById('ma-error').style.display = 'none';
 
-            document.getElementById('ma-error').style.display = 'none';
+                if (!players.length) {
+                    document.getElementById('ma-empty').style.display = '';
+                    document.getElementById('ma-players').innerHTML = '';
+                    return;
+                }
 
-            if (!players.length) {
-                document.getElementById('ma-empty').style.display = '';
+                document.getElementById('ma-empty').style.display = 'none';
+
+                var container = document.getElementById('ma-players');
+                container.innerHTML = '';
+                for (var i = 0; i < players.length; i++) {
+                    container.appendChild(buildCard(players[i]));
+                }
+            } catch (e) {
+                document.getElementById('ma-empty').style.display = 'none';
                 document.getElementById('ma-players').innerHTML = '';
-                return;
+                document.getElementById('ma-error').style.display = '';
             }
-
-            document.getElementById('ma-empty').style.display = 'none';
-
-            var html = '';
-            for (var i = 0; i < players.length; i++) {
-                html += buildPlayerCard(players[i]);
-            }
-            document.getElementById('ma-players').innerHTML = html;
-
-        } catch(e) {
-            document.getElementById('ma-empty').style.display = 'none';
-            document.getElementById('ma-players').innerHTML = '';
-            document.getElementById('ma-error').style.display = '';
         }
-    }
 
-    window.maCmd = async function(cmd, entityId) {
-        try {
-            var body = {command: cmd};
-            if (entityId) body.entity_id = entityId;
-            await fetch(ACTION + '/media/command', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(body),
-            });
-            setTimeout(refresh, 500);
-        } catch(e) {}
-    };
+        async function sendCmd(cmd, entityId) {
+            try {
+                await fetch(ACTION + '/media/command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ command: cmd, entity_id: entityId }),
+                });
+                setTimeout(refresh, 500);
+            } catch (e) { }
+        }
 
-    window.maVolume = async function(pct, entityId) {
-        try {
-            var body = {command: 'volume', value: parseInt(pct) / 100};
-            if (entityId) body.entity_id = entityId;
-            await fetch(ACTION + '/media/command', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(body),
-            });
-        } catch(e) {}
-    };
+        async function sendVolume(pct, entityId) {
+            try {
+                await fetch(ACTION + '/media/command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ command: 'volume', value: parseInt(pct) / 100, entity_id: entityId }),
+                });
+            } catch (e) { }
+        }
 
-    refresh();
-    setInterval(refresh, 5000);
-})();
+        refresh();
+        setInterval(refresh, 5000);
+    })();
 </script>
