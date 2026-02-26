@@ -18,7 +18,7 @@ class HomeAssistantPlugin(PluginBase):
             name="homeassistant",
             display_name="Home Assistant",
             description="Control smart home devices via Home Assistant REST API",
-            version="2.0.1",
+            version="2.0.2",
             author="Phillippe Pelzer",
         )
 
