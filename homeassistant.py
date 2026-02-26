@@ -222,7 +222,7 @@ class HomeAssistantPlugin(PluginBase):
                     id="ha-media-player",
                     title="Media Players",
                     icon="🎵",
-                    size="large",
+                    size="small",
                     order=11,
                 ),
             )
